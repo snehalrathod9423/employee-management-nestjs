@@ -7,7 +7,10 @@ import {
   Put,
   Delete,
   ParseIntPipe,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
+
 import { EmployeeService } from './employee.service';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
@@ -26,6 +29,25 @@ export class EmployeeController {
     return this.employeeService.findAll();
   }
 
+  // ✅ Excel FIRST
+  @Get('excel')
+  downloadExcel(@Res() res: Response) {
+    return this.employeeService.downloadExcel(res);
+  }
+
+  // ✅ PDF
+  @Get('pdf')
+  downloadPDF(@Res() res: Response) {
+    return this.employeeService.downloadPDF(res);
+  }
+
+  // ✅ PPT
+  @Get('ppt')
+  downloadPPT(@Res() res: Response) {
+    return this.employeeService.downloadPPT(res);
+  }
+
+  // ✅ Dynamic routes LAST
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.employeeService.findOne(id);
