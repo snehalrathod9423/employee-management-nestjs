@@ -1,4 +1,4 @@
-import { Entity, Column, PrimaryGeneratedColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
 
 @Entity()
 export class Employee {
@@ -15,6 +15,12 @@ export class Employee {
   @Column()
   department: string;
 
-  @Column('decimal')
+  @Column()
   salary: number;
+
+  @Column()
+  password: string;   
+
+  @Column({ default: 'employee' })
+  role: string;       
 }

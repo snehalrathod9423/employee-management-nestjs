@@ -9,6 +9,7 @@ import type { Response } from 'express';
 import * as XLSX from 'xlsx';
 import PDFDocument from 'pdfkit';
 import PptxGenJS from 'pptxgenjs';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class EmployeeService {
@@ -19,9 +20,16 @@ export class EmployeeService {
 
   // ✅ Create
   async create(createEmployeeDto: CreateEmployeeDto) {
-    const employee = this.employeeRepository.create(createEmployeeDto);
-    return await this.employeeRepository.save(employee);
-  }
+  const hashedPassword = await bcrypt.hash(createEmployeeDto.password, 10);
+
+  const employee = this.employeeRepository.create({
+    ...createEmployeeDto,
+    password: hashedPassword,
+  });
+
+  return await this.employeeRepository.save(employee);
+}
+
 
   // ✅ Get All
   async findAll() {
@@ -120,7 +128,7 @@ export class EmployeeService {
 
   const ppt = new PptxGenJS();
 
-  const limitPerSlide = 10;   // 🔥 You can change this
+  const limitPerSlide = 10;   
 
   let slide;
   let rows: any[] = [];
