@@ -4,7 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Employee } from '../employee/employee.entity';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-
+import { JwtAuthGuard } from './jwt.guard';
+import { RolesGuard } from './roles.guard';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Employee]),
@@ -13,7 +14,8 @@ import { AuthController } from './auth.controller';
       signOptions: { expiresIn: '1h' },
     }),
   ],
-  providers: [AuthService],
-  controllers: [AuthController],
+   controllers: [AuthController],
+  providers: [AuthService, JwtAuthGuard, RolesGuard],
+  exports: [JwtModule, JwtAuthGuard, RolesGuard],
 })
 export class AuthModule {}

@@ -28,13 +28,70 @@ export class EmployeeService {
   });
 
   return await this.employeeRepository.save(employee);
-}
+  }
 
 
   // ✅ Get All
-  async findAll() {
-    return await this.employeeRepository.find();
+  async findAll(
+  page?: number,
+  limit?: number,
+  department?: string,
+  name?: string,
+  minSalary?: number,
+  sort?: string,
+  order?: 'ASC' | 'DESC',
+ ) {
+  const pageNumber = page ? Number(page) : 1;
+  const limitNumber = limit ? Number(limit) : 10;
+  const salaryFilter =
+    minSalary !== undefined ? Number(minSalary) : undefined;
+
+  const query = this.employeeRepository.createQueryBuilder('employee');
+
+  
+  if (department) {
+    query.andWhere('employee.department = :department', { department });
   }
+
+  if (name) {
+    query.andWhere('employee.name ILIKE :name', {
+      name: `%${name}%`,
+    });
+  }
+
+  if (salaryFilter !== undefined && !isNaN(salaryFilter)) {
+    query.andWhere('employee.salary >= :salary', {
+      salary: salaryFilter,
+    });
+  }
+
+ 
+  const allowedSortFields = ['id', 'name', 'salary', 'department'];
+
+  if (sort && allowedSortFields.includes(sort)) {
+    query.orderBy(`employee.${sort}`, order === 'DESC' ? 'DESC' : 'ASC');
+  } else {
+    
+    query.orderBy('employee.id', 'ASC');
+  }
+
+  const total = await query.getCount();
+
+  const data = await query
+    .skip((pageNumber - 1) * limitNumber)
+    .take(limitNumber)
+    .getMany();
+
+  return {
+    total,
+    page: pageNumber,
+    limit: limitNumber,
+    data,
+  };
+ }
+
+
+
 
   // ✅ Get One
   async findOne(id: number) {
@@ -58,7 +115,7 @@ export class EmployeeService {
   // ✅ Delete
   async remove(id: number) {
     await this.findOne(id);
-    await this.employeeRepository.delete(id);
+    await this.employeeRepository.softDelete(id);
     return { message: 'Employee deleted successfully' };
   }
 
@@ -196,5 +253,10 @@ export class EmployeeService {
 
   res.send(buffer);
  }
+ async restore(id: number) {
+  await this.employeeRepository.restore(id);
+  return { message: 'Employee restored successfully' };
+}
+
 
 }
