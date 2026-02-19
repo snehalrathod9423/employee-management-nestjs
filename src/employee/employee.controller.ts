@@ -51,7 +51,7 @@ export class EmployeeController {
  }
 
 
-  // ✅ Excel FIRST
+  // ✅ Excel 
   @Get('excel')
   downloadExcel(@Res() res: Response) {
     return this.employeeService.downloadExcel(res);
@@ -69,7 +69,7 @@ export class EmployeeController {
     return this.employeeService.downloadPPT(res);
   }
 
-  // ✅ Dynamic routes LAST
+  
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.employeeService.findOne(id);
