@@ -34,7 +34,7 @@ export class EmployeeService {
 
     const savedEmployee = await this.employeeRepository.save(employee);
 
-    // 🔥 Send welcome email
+    //  Send welcome email
     try {
       await this.mailService.sendWelcomeEmail(
         savedEmployee.email,
