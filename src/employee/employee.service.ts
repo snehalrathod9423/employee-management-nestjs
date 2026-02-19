@@ -5,6 +5,7 @@ import { Employee } from './employee.entity';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 import type { Response } from 'express';
+import { MailService } from '../mail/mail.service';
 
 import * as XLSX from 'xlsx';
 import PDFDocument from 'pdfkit';
@@ -16,82 +17,92 @@ export class EmployeeService {
   constructor(
     @InjectRepository(Employee)
     private employeeRepository: Repository<Employee>,
+    private mailService: MailService,
   ) {}
 
-  // ✅ Create
+  // ✅ Create Employee + Send Welcome Mail
   async create(createEmployeeDto: CreateEmployeeDto) {
-  const hashedPassword = await bcrypt.hash(createEmployeeDto.password, 10);
+    const hashedPassword = await bcrypt.hash(
+      createEmployeeDto.password,
+      10,
+    );
 
-  const employee = this.employeeRepository.create({
-    ...createEmployeeDto,
-    password: hashedPassword,
-  });
+    const employee = this.employeeRepository.create({
+      ...createEmployeeDto,
+      password: hashedPassword,
+    });
 
-  return await this.employeeRepository.save(employee);
+    const savedEmployee = await this.employeeRepository.save(employee);
+
+    // 🔥 Send welcome email
+    try {
+      await this.mailService.sendWelcomeEmail(
+        savedEmployee.email,
+        savedEmployee.name,
+      );
+      console.log('Welcome email sent successfully');
+    } catch (error) {
+      console.log('Mail sending failed:', error.message);
+    }
+
+    return savedEmployee;
   }
 
-
-  // ✅ Get All
+  // ✅ Get All (Pagination + Filter + Sorting)
   async findAll(
-  page?: number,
-  limit?: number,
-  department?: string,
-  name?: string,
-  minSalary?: number,
-  sort?: string,
-  order?: 'ASC' | 'DESC',
- ) {
-  const pageNumber = page ? Number(page) : 1;
-  const limitNumber = limit ? Number(limit) : 10;
-  const salaryFilter =
-    minSalary !== undefined ? Number(minSalary) : undefined;
+    page?: number,
+    limit?: number,
+    department?: string,
+    name?: string,
+    minSalary?: number,
+    sort?: string,
+    order?: 'ASC' | 'DESC',
+  ) {
+    const pageNumber = page ? Number(page) : 1;
+    const limitNumber = limit ? Number(limit) : 10;
+    const salaryFilter =
+      minSalary !== undefined ? Number(minSalary) : undefined;
 
-  const query = this.employeeRepository.createQueryBuilder('employee');
+    const query = this.employeeRepository.createQueryBuilder('employee');
 
-  
-  if (department) {
-    query.andWhere('employee.department = :department', { department });
+    if (department) {
+      query.andWhere('employee.department = :department', { department });
+    }
+
+    if (name) {
+      query.andWhere('employee.name ILIKE :name', {
+        name: `%${name}%`,
+      });
+    }
+
+    if (salaryFilter !== undefined && !isNaN(salaryFilter)) {
+      query.andWhere('employee.salary >= :salary', {
+        salary: salaryFilter,
+      });
+    }
+
+    const allowedSortFields = ['id', 'name', 'salary', 'department'];
+
+    if (sort && allowedSortFields.includes(sort)) {
+      query.orderBy(`employee.${sort}`, order === 'DESC' ? 'DESC' : 'ASC');
+    } else {
+      query.orderBy('employee.id', 'ASC');
+    }
+
+    const total = await query.getCount();
+
+    const data = await query
+      .skip((pageNumber - 1) * limitNumber)
+      .take(limitNumber)
+      .getMany();
+
+    return {
+      total,
+      page: pageNumber,
+      limit: limitNumber,
+      data,
+    };
   }
-
-  if (name) {
-    query.andWhere('employee.name ILIKE :name', {
-      name: `%${name}%`,
-    });
-  }
-
-  if (salaryFilter !== undefined && !isNaN(salaryFilter)) {
-    query.andWhere('employee.salary >= :salary', {
-      salary: salaryFilter,
-    });
-  }
-
- 
-  const allowedSortFields = ['id', 'name', 'salary', 'department'];
-
-  if (sort && allowedSortFields.includes(sort)) {
-    query.orderBy(`employee.${sort}`, order === 'DESC' ? 'DESC' : 'ASC');
-  } else {
-    
-    query.orderBy('employee.id', 'ASC');
-  }
-
-  const total = await query.getCount();
-
-  const data = await query
-    .skip((pageNumber - 1) * limitNumber)
-    .take(limitNumber)
-    .getMany();
-
-  return {
-    total,
-    page: pageNumber,
-    limit: limitNumber,
-    data,
-  };
- }
-
-
-
 
   // ✅ Get One
   async findOne(id: number) {
@@ -112,11 +123,17 @@ export class EmployeeService {
     return this.findOne(id);
   }
 
-  // ✅ Delete
+  // ✅ Soft Delete
   async remove(id: number) {
     await this.findOne(id);
     await this.employeeRepository.softDelete(id);
     return { message: 'Employee deleted successfully' };
+  }
+
+  // ✅ Restore Soft Deleted Employee
+  async restore(id: number) {
+    await this.employeeRepository.restore(id);
+    return { message: 'Employee restored successfully' };
   }
 
   // ✅ Excel Download
@@ -163,15 +180,7 @@ export class EmployeeService {
 
     data.forEach(emp => {
       doc.text(
-        emp.id +
-          ' - ' +
-          emp.name +
-          ' - ' +
-          emp.email +
-          ' - ' +
-          emp.department +
-          ' - ' +
-          emp.salary,
+        `${emp.id} - ${emp.name} - ${emp.email} - ${emp.department} - ${emp.salary}`,
       );
       doc.moveDown();
     });
@@ -179,84 +188,73 @@ export class EmployeeService {
     doc.end();
   }
 
-  // ✅ PPT Download (Table Format)
+  // ✅ PPT Download
   async downloadPPT(res: Response) {
-  const data = await this.employeeRepository.find();
+    const data = await this.employeeRepository.find();
 
-  const ppt = new PptxGenJS();
+    const ppt = new PptxGenJS();
+    const limitPerSlide = 10;
 
-  const limitPerSlide = 10;   
+    let slide;
+    let rows: any[] = [];
+    let count = 0;
 
-  let slide;
-  let rows: any[] = [];
-  let count = 0;
+    for (let i = 0; i < data.length; i++) {
+      if (count === 0) {
+        slide = ppt.addSlide();
 
-  for (let i = 0; i < data.length; i++) {
+        slide.addText('Employee List', {
+          x: 0.5,
+          y: 0.3,
+          fontSize: 20,
+          bold: true,
+        });
 
-    // If first row OR new slide needed
-    if (count === 0) {
-      slide = ppt.addSlide();
+        rows = [];
 
-      slide.addText('Employee List', {
-        x: 0.5,
-        y: 0.3,
-        fontSize: 20,
-        bold: true,
-      });
+        rows.push([
+          { text: 'ID', options: { bold: true } },
+          { text: 'Name', options: { bold: true } },
+          { text: 'Email', options: { bold: true } },
+          { text: 'Department', options: { bold: true } },
+          { text: 'Salary', options: { bold: true } },
+        ]);
+      }
 
-      rows = [];
+      const emp = data[i];
 
-      // Header row
       rows.push([
-        { text: 'ID', options: { bold: true } },
-        { text: 'Name', options: { bold: true } },
-        { text: 'Email', options: { bold: true } },
-        { text: 'Department', options: { bold: true } },
-        { text: 'Salary', options: { bold: true } },
+        emp.id.toString(),
+        emp.name,
+        emp.email,
+        emp.department,
+        emp.salary.toString(),
       ]);
+
+      count++;
+
+      if (count === limitPerSlide || i === data.length - 1) {
+        slide.addTable(rows, {
+          x: 0.5,
+          y: 1,
+          w: 9,
+        });
+
+        count = 0;
+      }
     }
 
-    const emp = data[i];
+    const buffer = await ppt.write({ outputType: 'nodebuffer' });
 
-    rows.push([
-      emp.id.toString(),
-      emp.name,
-      emp.email,
-      emp.department,
-      emp.salary.toString(),
-    ]);
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename=employees.pptx',
+    );
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    );
 
-    count++;
-
-    // If limit reached OR last record
-    if (count === limitPerSlide || i === data.length - 1) {
-      slide.addTable(rows, {
-        x: 0.5,
-        y: 1,
-        w: 9,
-      });
-
-      count = 0;  // reset for next slide
-    }
+    res.send(buffer);
   }
-
-  const buffer = await ppt.write({ outputType: 'nodebuffer' });
-
-  res.setHeader(
-    'Content-Disposition',
-    'attachment; filename=employees.pptx',
-  );
-  res.setHeader(
-    'Content-Type',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  );
-
-  res.send(buffer);
- }
- async restore(id: number) {
-  await this.employeeRepository.restore(id);
-  return { message: 'Employee restored successfully' };
-}
-
-
 }
